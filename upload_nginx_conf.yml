@@ -1,0 +1,27 @@
+---
+- name: Upload NGINX config
+  hosts: webservers
+  become: yes
+  vars:
+    local_nginx_conf: ./nginx_conf_backups/nginx.conf
+    remote_nginx_conf: /etc/nginx/nginx.conf
+
+  tasks:
+    - name: Upload nginx.conf
+      copy:
+        src: "{{ local_nginx_conf }}"
+        dest: "{{ remote_nginx_conf }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Check Nginx config
+      command: nginx -t
+      register: nginx_check
+      changed_when: false
+      failed_when: nginx_check.rc != 0
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted

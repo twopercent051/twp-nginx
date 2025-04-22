@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Проверка, была ли передана команда
+if [ -z "$1" ]; then
+  echo "Использование: $0 pull|push|info|remove|add ..."
+  exit 1
+fi
+
+COMMAND="$1"
+
+# Обработка команд
+case "$COMMAND" in
+  pull)
+    # Проверка IP-адреса
+    if [ -z "$3" ]; then
+      echo "Использование: $0 pull -i <IP-адрес>"
+      exit 1
+    fi
+    IP_ADDRESS="$3"
+    # Создание временного файла инвентаризации
+    echo "[webservers]" > temp_hosts.ini
+    echo "web1 ansible_host=$IP_ADDRESS ansible_user=root ansible_python_interpreter=/usr/bin/python3" >> temp_hosts.ini
+    # Запуск ansible-playbook
+    ansible-playbook download_nginx_conf.yml -i temp_hosts.ini
+    # Удаление временного файла
+    rm temp_hosts.ini
+    ;;
+  push)
+    # Проверка IP-адреса
+    if [ -z "$3" ]; then
+      echo "Использование: $0 push -i <IP-адрес>"
+      exit 1
+    fi
+    IP_ADDRESS="$3"
+    # Создание временного файла инвентаризации
+    echo "[webservers]" > temp_hosts.ini
+    echo "web1 ansible_host=$IP_ADDRESS ansible_user=root ansible_python_interpreter=/usr/bin/python3" >> temp_hosts.ini
+    # Запуск ansible-playbook
+    ansible-playbook upload_nginx_conf.yml -i temp_hosts.ini
+    # Удаление временного файла
+    rm temp_hosts.ini
+    ;;
+  info)
+    # Запуск info.py
+    python info.py ./nginx_conf_backups/nginx.conf
+    ;;
+  remove)
+    # Обработка аргументов remove.py
+    if [ "$2" == "-t" ]; then
+      if [ -z "$3" ]; then
+        echo "Использование: $0 remove -t <url>"
+        exit 1
+      fi
+      python remove.py ./nginx_conf_backups/nginx.conf "$3"
+    else
+      echo "Использование: $0 remove -t <url>"
+      exit 1
+    fi
+    ;;
+  add)
+    # Обработка аргументов add.py
+    if [ "$2" == "-t" ]; then
+      if [ -z "$3" ]; then
+        echo "Использование: $0 add -t <url> -l <locals>"
+        exit 1
+      fi
+      if [ "$4" == "-l" ]; then
+        if [ -z "$5" ]; then
+          echo "Использование: $0 add -t <url> -l <locals>"
+          exit 1
+        fi
+        python add.py ./nginx_conf_backups/nginx.conf "$3" "$5"
+      else
+        echo "Использование: $0 add -t <url> -l <locals>"
+        exit 1
+      fi
+    else
+      echo "Использование: $0 add -t <url> -l <locals>"
+      exit 1
+    fi
+    ;;
+  *)
+    echo "Неизвестная команда: $COMMAND"
+    exit 1
+    ;;
+esac
+
+exit 0

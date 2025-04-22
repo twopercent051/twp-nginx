@@ -1,0 +1,27 @@
+- name: Get NGINX config
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  vars:
+    remote_nginx_conf: /etc/nginx/nginx.conf
+    local_backup_dir: ./nginx_conf_backups/
+    backup_filename: "nginx.conf"
+
+  tasks:
+    - name: Ping my servers
+      ping:
+
+    - name: Display OS information
+      debug:
+        msg: "OS Family: {{ ansible_os_family }}, Distribution: {{ ansible_distribution }}, Version: {{ ansible_distribution_version }}"
+    
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ local_backup_dir }}"
+        state: directory
+
+    - name: Download nginx.conf with timestamped filename
+      fetch:
+        src: "{{ remote_nginx_conf }}"
+        dest: "{{ local_backup_dir }}{{ backup_filename }}"
+        flat: yes
