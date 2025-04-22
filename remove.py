@@ -23,7 +23,6 @@ class Remove(Main):
         self._update_http_block(new_block=new_http_block)
 
 
-
 if __name__ == "__main__":
     nginx_conf_path = sys.argv[1]
     server_name = sys.argv[2]

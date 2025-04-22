@@ -13,12 +13,10 @@ class Main:
                 self._http_block = entry
                 self._servers = entry["value"]
 
-
     def _update_http_block(self, new_block: dict):
         self.__cfg.remove([("http", "")])
         self.__cfg.append(new_block)
         self.__cfg.savef(self.__nginx_conf_path)
-
 
     def _get_servers_ports(self) -> list[dict]:
         result = []
@@ -51,11 +49,13 @@ class Main:
                     frontend = True
                 if prefix == 8:
                     backend = True
-            server_data = {"server_name": server_name, "ports": ports, "suffix": suffix, "backend": backend, "frontend": frontend}
+            server_data = {
+                "server_name": server_name,
+                "ports": ports,
+                "suffix": suffix,
+                "backend": backend,
+                "frontend": frontend,
+            }
             result.append(server_data)
         result = sorted(result, key=lambda x: x["suffix"])
         return result
-
-
-
-

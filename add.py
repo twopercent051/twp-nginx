@@ -109,10 +109,10 @@ class Add(Main):
             "param": "",
             "value": [
                 ("server_name", server_name_to_add),
-
-            ] + backend + frontend,
+            ]
+            + backend
+            + frontend,
         }
-
 
     def add(self, server_name_to_add: str, locations: str):
 
@@ -136,11 +136,6 @@ class Add(Main):
         http_block["value"] = servers
         self._update_http_block(new_block=http_block)
         print(f"Добавили {server_name_to_add}")
-
-
-
-
-
 
 
 if __name__ == "__main__":
