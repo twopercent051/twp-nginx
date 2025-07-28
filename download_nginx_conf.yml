@@ -1,11 +1,13 @@
-- name: Get NGINX config
+- name: Get NGINX config and all sites-available
   hosts: webservers
   become: yes
   gather_facts: yes
   vars:
     remote_nginx_conf: /etc/nginx/nginx.conf
-    local_backup_dir: ./nginx_conf_backups/
+    remote_sites_available: /etc/nginx/sites-available/
+    local_backup_dir: ./.nginx_conf_backups/
     backup_filename: "nginx.conf"
+    sites_available_dir: "sites-available"
 
   tasks:
     - name: Ping my servers
@@ -14,14 +16,27 @@
     - name: Display OS information
       debug:
         msg: "OS Family: {{ ansible_os_family }}, Distribution: {{ ansible_distribution }}, Version: {{ ansible_distribution_version }}"
-    
+
     - name: Ensure backup directory exists
       file:
         path: "{{ local_backup_dir }}"
         state: directory
 
-    - name: Download nginx.conf with timestamped filename
+    - name: Download nginx.conf
       fetch:
         src: "{{ remote_nginx_conf }}"
         dest: "{{ local_backup_dir }}{{ backup_filename }}"
         flat: yes
+
+    - name: Поиск всех файлов в sites-available на сервере
+      find:
+        paths: "{{ remote_sites_available }}"
+        file_type: file
+      register: sites_available_files
+
+    - name: Копировать найденные конфиги sites-available на локальную машину
+      fetch:
+        src: "{{ item.path }}"
+        dest: "{{ local_backup_dir }}/{{ sites_available_dir }}/"
+        flat: yes
+      loop: "{{ sites_available_files.files }}"

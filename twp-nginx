@@ -26,58 +26,83 @@ case "$COMMAND" in
     rm temp_hosts.ini
     ;;
   push)
-    # Проверка IP-адреса
-    if [ -z "$3" ]; then
-      echo "Использование: $0 push -i <IP-адрес>"
+    # По умолчанию
+    IP_ADDRESS=""
+    EMAIL=""
+
+    # Обработка параметров командной строки
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --ip)
+          IP_ADDRESS="$2"
+          shift 2
+          ;;
+        --email)
+          EMAIL="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+
+    # Проверка наличия IP и EMAIL
+    if [[ -z "$IP_ADDRESS" || -z "$EMAIL" ]]; then
+      echo "Использование: $0 push --ip <IP-адрес> --email <email>"
       exit 1
     fi
-    IP_ADDRESS="$3"
+
     # Создание временного файла инвентаризации
     echo "[webservers]" > temp_hosts.ini
     echo "web1 ansible_host=$IP_ADDRESS ansible_user=root ansible_python_interpreter=/usr/bin/python3" >> temp_hosts.ini
-    # Запуск ansible-playbook
-    ansible-playbook upload_nginx_conf.yml -i temp_hosts.ini
+
+    # Запуск ansible-playbook с пробросом email
+    ansible-playbook upload_nginx_conf.yml -i temp_hosts.ini -e "certbot_email=$EMAIL"
+
     # Удаление временного файла
     rm temp_hosts.ini
     ;;
-  info)
-    # Запуск info.py
-    python info.py ./nginx_conf_backups/nginx.conf
-    ;;
-  remove)
-    # Обработка аргументов remove.py
-    if [ "$2" == "-t" ]; then
-      if [ -z "$3" ]; then
-        echo "Использование: $0 remove -t <url>"
-        exit 1
-      fi
-      python remove.py ./nginx_conf_backups/nginx.conf "$3"
-    else
-      echo "Использование: $0 remove -t <url>"
-      exit 1
-    fi
-    ;;
   add)
-    # Обработка аргументов add.py
-    if [ "$2" == "-t" ]; then
-      if [ -z "$3" ]; then
-        echo "Использование: $0 add -t <url> -l <locals>"
-        exit 1
-      fi
-      if [ "$4" == "-l" ]; then
-        if [ -z "$5" ]; then
-          echo "Использование: $0 add -t <url> -l <locals>"
-          exit 1
-        fi
-        python add.py ./nginx_conf_backups/nginx.conf "$3" "$5"
-      else
-        echo "Использование: $0 add -t <url> -l <locals>"
-        exit 1
-      fi
-    else
-      echo "Использование: $0 add -t <url> -l <locals>"
+    url=""
+    bport=""
+    fport=""
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --url)
+          url="$2"
+          shift 2
+          ;;
+        -b|--backend-port)
+          bport="$2"
+          shift 2
+          ;;
+        -f|--frontend-port)
+          fport="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+
+    if [ -z "$url" ]; then
+      echo "Использование: $0 add --url <адрес> [-b <backend_port>] [-f <frontend_port>]"
       exit 1
     fi
+
+    # Формируем аргументы для python-скрипта
+    args="--url \"$url\""
+    if [ -n "$bport" ]; then
+      args="$args -b $bport"
+    fi
+    if [ -n "$fport" ]; then
+      args="$args -f $fport"
+    fi
+
+    eval python add.py $args
     ;;
   *)
     echo "Неизвестная команда: $COMMAND"

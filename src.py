@@ -1,61 +1,51 @@
-from pynginxconfig import NginxConfig
-from urllib.parse import urlparse
+import re
+from pathlib import Path
 
 
 class Main:
-    def __init__(self, nginx_conf_path: str):
-        cfg = NginxConfig()
-        self.__cfg = cfg
-        self.__nginx_conf_path = nginx_conf_path
-        cfg.loadf(filename=nginx_conf_path)
-        for entry in cfg.data:
-            if isinstance(entry, dict) and entry.get("name") == "http":
-                self._http_block = entry
-                self._servers = entry["value"]
+    def __init__(self, url: str):
+        self._url = url
+        # Пути по умолчанию можно заменить на свои, если надо
+        self.__nginx_conf_path = Path("./.nginx_conf_backups/nginx.conf")
+        self._sites_available_path = Path(f"./.nginx_conf_backups/sites-available/{url}")
 
-    def _update_http_block(self, new_block: dict):
-        self.__cfg.remove([("http", "")])
-        self.__cfg.append(new_block)
-        self.__cfg.savef(self.__nginx_conf_path)
+    @staticmethod
+    def _http_block_str() -> str:
+        # Твой эталонный http-блок, можно кастомизировать если нужно
+        return """
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    access_log    /var/log/nginx/access.log  combined;
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+""".strip()
 
-    def _get_servers_ports(self) -> list[dict]:
-        result = []
-        for server in self._servers:
-            server_value = server.get("value")
-            if not server_value:
-                return result
-            server_name = ""
-            ports = []
-            for location in server_value:
-                if isinstance(location, tuple) and location[0] == "server_name":
-                    server_name = location[1]
-                if isinstance(location, dict) and location.get("name") == "location":
-                    proxy_data = location.get("value")
-                    if not proxy_data:
-                        continue
-                    for item in proxy_data:
-                        if isinstance(item, tuple) and item[0] == "proxy_pass":
-                            url = item[1]
-                            port = urlparse(url=url).port
-                            ports.append(port)
-            ports = list(set(ports))
-            backend = False
-            frontend = False
-            suffix = 0
-            for port in ports:
-                suffix = port % 100
-                prefix = port // 1000
-                if prefix == 3:
-                    frontend = True
-                if prefix == 8:
-                    backend = True
-            server_data = {
-                "server_name": server_name,
-                "ports": ports,
-                "suffix": suffix,
-                "backend": backend,
-                "frontend": frontend,
-            }
-            result.append(server_data)
-        result = sorted(result, key=lambda x: x["suffix"])
-        return result
+    def _reset_http_block(self):
+        """
+        Заменяет http-блок в nginx.conf на шаблонный. Оставляет все остальные секции как есть.
+        """
+        conf_path = self.__nginx_conf_path
+        http_block = self._http_block_str()
+
+        content = conf_path.read_text(encoding="utf-8")
+
+        # Заменяем первый попавшийся http {...}
+        new_content, n = re.subn(r"http\s*\{.*?\}", http_block, content, flags=re.DOTALL)
+
+        if n == 0:
+            # Если нет http блока - добавим в конец файла
+            if not new_content.endswith("\n"):
+                new_content += "\n"
+            new_content += http_block + "\n"
+
+        conf_path.write_text(new_content, encoding="utf-8")
+
+    def _update_available_site(self, template_text: str):
+        """
+        Перезаписывает sites-available файл содержимым из строки (обычно server { ... })
+        """
+        path = self._sites_available_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(template_text.strip() + "\n", encoding="utf-8")

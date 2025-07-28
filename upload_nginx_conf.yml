@@ -1,10 +1,14 @@
 ---
-- name: Upload NGINX config
+- name: Синхронизация NGINX configs полностью как на локалке
   hosts: webservers
   become: yes
   vars:
-    local_nginx_conf: ./nginx_conf_backups/nginx.conf
+    local_nginx_conf: ./.nginx_conf_backups/nginx.conf
     remote_nginx_conf: /etc/nginx/nginx.conf
+    local_sites_available_dir: ./.nginx_conf_backups/sites-available/
+    remote_sites_available_dir: /etc/nginx/sites-available/
+    remote_sites_enabled_dir: /etc/nginx/sites-enabled/
+    certbot_live_dir: /etc/letsencrypt/live
 
   tasks:
     - name: Upload nginx.conf
@@ -14,6 +18,77 @@
         owner: root
         group: root
         mode: '0644'
+
+    - name: Find local site configs
+      find:
+        paths: "{{ local_sites_available_dir }}"
+        file_type: file
+      delegate_to: localhost
+      become: no
+      register: found_sites
+
+    - name: Find remote site configs (для удаления лишних)
+      find:
+        paths: "{{ remote_sites_available_dir }}"
+        file_type: file
+      register: remote_sites
+
+    - name: Set list of basenames of local files
+      set_fact:
+        local_basename_list: "{{ found_sites.files | map(attribute='path') | map('basename') | list }}"
+
+    - name: Remove extra files in sites-available which are not in local
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ remote_sites.files }}"
+      when: "(item.path | basename) not in local_basename_list"
+
+    - name: Ensure remote sites-available directory exists
+      file:
+        path: "{{ remote_sites_available_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Upload site config files
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ remote_sites_available_dir }}/{{ item.path | basename }}"
+        owner: root
+        group: root
+        mode: '0644'
+      with_items: "{{ found_sites.files }}"
+
+    - name: Ensure remote sites-enabled directory exists
+      file:
+        path: "{{ remote_sites_enabled_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Find remote sites-enabled (подготовка списка для сборки доменов)
+      find:
+        paths: "{{ remote_sites_enabled_dir }}"
+        file_type: any
+      register: enabled_sites
+
+    - name: Remove extra symlinks in sites-enabled which are not in local
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ enabled_sites.files }}"
+      when: "item.islnk and (item.path | basename) not in local_basename_list"
+
+    - name: Symlink each site config into sites-enabled
+      file:
+        src: "{{ remote_sites_available_dir }}/{{ item.path | basename }}"
+        dest: "{{ remote_sites_enabled_dir }}/{{ item.path | basename }}"
+        state: link
+        force: yes
+      with_items: "{{ found_sites.files }}"
 
     - name: Check Nginx config
       command: nginx -t
@@ -25,3 +100,47 @@
       service:
         name: nginx
         state: restarted
+
+    - name: Найти все файлы в sites-enabled
+      find:
+        paths: "{{ remote_sites_enabled_dir }}"
+        file_type: file
+      register: enabled_sites
+
+    - name: Получить домены из server_name в каждом конфиге
+      shell: |
+        grep -oP 'server_name\s+\K[^;]+' {{ item.path }} | tr -s ' ' '\n'
+      loop: "{{ enabled_sites.files }}"
+      register: nginx_servernames
+      changed_when: false
+
+    - name: Определить список кандидатов для выпуска сертификата (на основе имени файла)
+      set_fact:
+        enabled_domains: "{{ enabled_sites.files | map(attribute='path') | map('basename') | list }}"
+
+    - name: Получить список уже существующий директорий сертификатов
+      find:
+        paths: "{{ certbot_live_dir }}"
+        file_type: directory
+      register: live_certs
+
+    - name: Определить для какого сайта нет сертификата
+      set_fact:
+        sites_without_cert: >-
+          {{
+            enabled_domains |
+            difference(live_certs.files | map(attribute='path') | map('basename') | list)
+          }}
+
+    - name: Запустить certbot для сайтов без сертификата
+      command: >
+        certbot --nginx --agree-tos --non-interactive --email {{ certbot_email }} -d {{ item }}
+      loop: "{{ sites_without_cert }}"
+      notify: reload nginx
+      when: sites_without_cert | length > 0
+
+  handlers:
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
